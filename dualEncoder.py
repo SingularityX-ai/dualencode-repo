@@ -8,6 +8,8 @@ import json
 from enum import Enum
 
 import numpy as np
+from apiCall import generate_code_tree
+from schema import CodeTree
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
@@ -31,7 +33,7 @@ class DualEncoder:
     def __init__(
         self,
         code_model: str = "microsoft/codebert-base",
-        doc_model: str = "e5-large-v2",
+        doc_model: str = "intfloat/e5-large-v2",
         device: str = None,
         code_weight: float = 0.5  # Weight for combining similarities
     ):
@@ -84,7 +86,7 @@ class DualEncoder:
     def load_documentation(self, docs_path: str) -> Dict[str, str]:
         """Load external documentation from a directory."""
         docs = {}
-        doc_files = glob.glob(os.path.join(docs_path, "**/*.txt"), recursive=True)
+        doc_files = glob.glob(os.path.join(docs_path, "**/*.py"), recursive=True)
         
         for doc_file in doc_files:
             function_name = Path(doc_file).stem
@@ -96,6 +98,8 @@ class DualEncoder:
     def preprocess_code(self, code: str) -> str:
         """Preprocess code for better embedding."""
         # Remove comments
+    
+        print(code)
         tree = ast.parse(code)
         return ast.unparse(tree)
 
@@ -116,29 +120,41 @@ class DualEncoder:
     def index_repository(self, repo_path: str, docs_path: str):
         """Index all Python files using both encoders."""
         python_files = glob.glob(os.path.join(repo_path, "**/*.py"), recursive=True)
-        external_docs = self.load_documentation(docs_path)
+        # external_docs = self.load_documentation(docs_path)
         
         # Collect all texts to encode
         codes_to_encode = []
         docs_to_encode = []
-        temp_functions = []
+        temp_functions: List[CodeFunction] = []
         
         for file_path in python_files:
-            functions = self.parse_python_file(file_path)
-            
-            for func in functions:
+            if "py_scripts" in file_path:
+                continue
+
+            if file_path.endswith("conftest.py"):
+                continue
+            with open(file_path, 'r') as file:
+                code_str = file.read()
+
+            code_tree: CodeTree = generate_code_tree(file_path, code_str, [])
+
+            for func, func_dict in code_tree.methods.items():
                 # Prepare code for embedding
-                processed_code = self.preprocess_code(func.code)
+                processed_code = self.preprocess_code(func_dict.content)
                 codes_to_encode.append(processed_code)
+                func_name = func.split("~")[0]
                 
                 # Combine all documentation
-                combined_doc = func.documentation
-                if func.name in external_docs:
-                    combined_doc += "\n" + external_docs[func.name]
-                docs_to_encode.append(combined_doc)
+                combined_doc = f"MethodName: {func_name} \n{func_dict.docstring}"
                 
-                temp_functions.append(func)
-        
+                docs_to_encode.append(combined_doc)
+                temp_functions.append(CodeFunction(
+                    name=func_name,
+                    code=func_dict.content,
+                    documentation=func_dict.docstring,
+                    file_path=file_path
+                ))
+                                    
         # Batch encode everything
         code_embeddings = self.encode_batch(codes_to_encode, self.code_encoder)
         doc_embeddings = self.encode_batch(docs_to_encode, self.doc_encoder)

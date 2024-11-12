@@ -5,6 +5,8 @@ from collections import defaultdict
 import networkx as nx
 from pathlib import Path
 
+from dualEncoder import DualEncoder
+
 class CodeMindMapGenerator:
     def __init__(self, dual_encoder: DualEncoder):
         self.encoder = dual_encoder
