@@ -1,4 +1,5 @@
 import os
+from pprint import pprint
 from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 from dataclasses import dataclass
 import ast
@@ -127,7 +128,13 @@ class DualEncoder:
         docs_to_encode = []
         temp_functions: List[CodeFunction] = []
         
+        count = 0
         for file_path in python_files:
+
+            # count += 1
+            # if count > 2:
+            #     break
+
             if "py_scripts" in file_path:
                 continue
 
@@ -136,11 +143,14 @@ class DualEncoder:
             with open(file_path, 'r') as file:
                 code_str = file.read()
 
-            code_tree: CodeTree = generate_code_tree(file_path, code_str, [])
+            code_tree = generate_code_tree(file_path, code_str, [])
+            code_tree: CodeTree = CodeTree(**code_tree)
+            pprint(code_tree)
+            
 
             for func, func_dict in code_tree.methods.items():
                 # Prepare code for embedding
-                processed_code = self.preprocess_code(func_dict.content)
+                processed_code = func_dict.content
                 codes_to_encode.append(processed_code)
                 func_name = func.split("~")[0]
                 
