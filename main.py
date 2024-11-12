@@ -7,9 +7,12 @@ encoder = DualEncoder(
 )
 
 # Index your repository
+repo = "/Users/sumansaurabh/Documents/singularityx/github/MoneyPrinterTurbo/app/"
+repo = "/Users/sumansaurabh/Documents/singularityx/github/snorkell-backend/backend/"
+
 encoder.index_repository(
-    repo_path="path/to/code",
-    docs_path="path/to/documentation"
+    repo_path=repo,
+    docs_path=repo
 )
 
 # Search with different focuses

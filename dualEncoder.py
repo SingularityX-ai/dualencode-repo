@@ -118,10 +118,17 @@ class DualEncoder:
             convert_to_numpy=True
         )
 
-    def index_repository(self, repo_path: str, docs_path: str):
+    def index_repository(self, repo_path: str, docs_path: str, force_update: bool = False):
         """Index all Python files using both encoders."""
         python_files = glob.glob(os.path.join(repo_path, "**/*.py"), recursive=True)
         # external_docs = self.load_documentation(docs_path)
+        index_path = f"{repo_path}/function_index.json"
+        if not force_update:
+            # Check if index already exists
+            
+            if os.path.exists(index_path):
+                self.load_index(index_path)
+                return
         
         # Collect all texts to encode
         codes_to_encode = []
@@ -174,6 +181,8 @@ class DualEncoder:
             func.code_embedding = code_emb
             func.doc_embedding = doc_emb
             self.functions.append(func)
+
+        self.save_index(index_path)
 
     def search(
         self,
