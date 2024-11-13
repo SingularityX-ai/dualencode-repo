@@ -192,7 +192,7 @@ class DualEncoder:
         query: str,
         search_code: bool = True,
         search_docs: bool = True,
-        top_k: int = 5,
+        top_k: int = 2,
         min_similarity: float = 0.3
     ) -> List[CodeAnalysisResult]:
         """
@@ -205,9 +205,13 @@ class DualEncoder:
             top_k: Number of results to return
             min_similarity: Minimum similarity threshold
         """
-        # Encode query with both encoders
+        # Encode query with both encoders and normalize
         code_query = self.code_encoder.encode(query, convert_to_numpy=True)
         doc_query = self.doc_encoder.encode(query, convert_to_numpy=True)
+        
+        # Normalize query vectors
+        code_query = code_query / (np.linalg.norm(code_query) + 1e-8)
+        doc_query = doc_query / (np.linalg.norm(doc_query) + 1e-8)
         
         results = []
         
@@ -215,22 +219,20 @@ class DualEncoder:
             code_sim = 0.0
             doc_sim = 0.0
             
-            if search_code:
-                code_sim = cosine_similarity(
-                    code_query.reshape(1, -1),
-                    func.code_embedding.reshape(1, -1)
-                )[0][0]
-                
-            if search_docs:
-                doc_sim = cosine_similarity(
-                    doc_query.reshape(1, -1),
-                    func.doc_embedding.reshape(1, -1)
-                )[0][0]
+            if search_code and func.code_embedding is not None:
+                # Normalize code embedding
+                code_embedding = func.code_embedding / (np.linalg.norm(func.code_embedding) + 1e-8)
+                code_sim = np.dot(code_query, code_embedding)
+                    
+            if search_docs and func.doc_embedding is not None:
+                # Normalize doc embedding
+                doc_embedding = func.doc_embedding / (np.linalg.norm(func.doc_embedding) + 1e-8)
+                doc_sim = np.dot(doc_query, doc_embedding)
             
             # Calculate combined similarity
             if search_code and search_docs:
                 combined_sim = (code_sim * self.code_weight + 
-                              doc_sim * self.doc_weight)
+                            doc_sim * self.doc_weight)
             elif search_code:
                 combined_sim = code_sim
             else:
