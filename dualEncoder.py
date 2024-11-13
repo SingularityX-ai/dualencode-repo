@@ -195,15 +195,26 @@ class DualEncoder:
         top_k: int = 2,
         min_similarity: float = 0.3
     ) -> List[CodeAnalysisResult]:
-        """
-        Search for similar functions using both code and documentation embeddings.
-        
+        """Search for similar functions using both code and documentation
+        embeddings.
+
+        This function encodes the provided search query using both code and
+        documentation encoders, normalizes the resulting vectors, and computes
+        similarity scores against a set of functions. It allows the user to
+        specify whether to search in code, documentation, or both, and returns
+        the top K results that meet a minimum similarity threshold. The results
+        are sorted by combined similarity and returned as a list.
+
         Args:
-            query: Search query
-            search_code: Whether to search in code
-            search_docs: Whether to search in documentation
-            top_k: Number of results to return
-            min_similarity: Minimum similarity threshold
+            query (str): The search query to find similar functions.
+            search_code (bool): Whether to include code in the search. Defaults to True.
+            search_docs (bool): Whether to include documentation in the search. Defaults to True.
+            top_k (int): The number of top results to return. Defaults to 2.
+            min_similarity (float): The minimum similarity threshold for results. Defaults to 0.3.
+
+        Returns:
+            List[CodeAnalysisResult]: A list of CodeAnalysisResult objects containing
+            similarity scores and corresponding functions that meet the criteria.
         """
         # Encode query with both encoders and normalize
         code_query = self.code_encoder.encode(query, convert_to_numpy=True)
