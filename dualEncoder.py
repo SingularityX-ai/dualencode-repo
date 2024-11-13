@@ -41,6 +41,7 @@ class DualEncoder:
         # Auto-detect device if none specified
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Using device: {device}")
             
         self.code_encoder = SentenceTransformer(code_model, device=device)
         self.doc_encoder = SentenceTransformer(doc_model, device=device)
@@ -48,41 +49,6 @@ class DualEncoder:
         self.doc_weight = 1 - code_weight
         self.functions: List[CodeFunction] = []
         
-    def parse_python_file(self, file_path: str) -> List[CodeFunction]:
-        """Parse a Python file and extract functions with their documentation."""
-        with open(file_path, 'r') as file:
-            content = file.read()
-            
-        tree = ast.parse(content)
-        functions = []
-        
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                # Extract function code
-                code_lines = content.split('\n')[node.lineno-1:node.end_lineno]
-                code = '\n'.join(code_lines)
-                
-                # Extract docstring and comments
-                docstring = ast.get_docstring(node) or ''
-                
-                # Extract inline comments
-                comments = []
-                for child in ast.walk(node):
-                    if hasattr(child, 'lineno'):
-                        line = code_lines[child.lineno - node.lineno]
-                        if '#' in line:
-                            comments.append(line[line.index('#')+1:].strip())
-                
-                all_documentation = docstring + '\n' + '\n'.join(comments)
-                
-                functions.append(CodeFunction(
-                    name=node.name,
-                    code=code,
-                    documentation=all_documentation,
-                    file_path=file_path
-                ))
-                
-        return functions
 
     def load_documentation(self, docs_path: str) -> Dict[str, str]:
         """Load external documentation from a directory."""
@@ -95,14 +61,6 @@ class DualEncoder:
                 docs[function_name] = f.read().strip()
                 
         return docs
-
-    def preprocess_code(self, code: str) -> str:
-        """Preprocess code for better embedding."""
-        # Remove comments
-    
-        print(code)
-        tree = ast.parse(code)
-        return ast.unparse(tree)
 
     def encode_batch(
         self,
@@ -118,17 +76,29 @@ class DualEncoder:
             convert_to_numpy=True
         )
 
+
     def index_repository(self, repo_path: str, docs_path: str, force_update: bool = False):
         """Index all Python files using both encoders."""
-        python_files = glob.glob(os.path.join(repo_path, "**/*.py"), recursive=True)
+
+
         # external_docs = self.load_documentation(docs_path)
         index_path = f"{repo_path}/function_index.json"
         if not force_update:
             # Check if index already exists
+            print("checking if index exists")
             
             if os.path.exists(index_path):
+                print("index exists")
                 self.load_index(index_path)
                 return
+
+        python_files = glob.glob(os.path.join(repo_path, "**/*"), recursive=True)
+        print("tot files - ", len(python_files))
+        
+        # filter ["py","ts","cs","c","js", "kt"]
+        python_files = [file for file in python_files if file.split(".")[-1] in ["py","ts","cs","c","js", "kt"]]
+
+        print("selected files - ", len(python_files))
         
         # Collect all texts to encode
         codes_to_encode = []
@@ -136,7 +106,14 @@ class DualEncoder:
         temp_functions: List[CodeFunction] = []
         
         count = 0
+        print(1)
         for file_path in python_files:
+
+            extension = file_path.split(".")[-1]
+            if extension not in ["py","ts","cs","c","js", "kt"]:
+                print(f"skipping extension - {extension}")
+                continue
+
 
             # count += 1
             # if count > 2:
@@ -151,30 +128,56 @@ class DualEncoder:
                 code_str = file.read()
 
             code_tree = generate_code_tree(file_path, code_str, [])
-            code_tree: CodeTree = CodeTree(**code_tree)
-            pprint(code_tree)
+            try:
+                code_tree: CodeTree = CodeTree(**code_tree)
+            except Exception as e:
+                print("Error in parsing code tree")
+                continue
+            # pprint(code_tree)
             
-
-            for func, func_dict in code_tree.methods.items():
-                # Prepare code for embedding
-                processed_code = func_dict.content
-                codes_to_encode.append(processed_code)
-                func_name = func.split("~")[0]
-                
-                # Combine all documentation
-                combined_doc = f"MethodName: {func_name} \n{func_dict.docstring}"
-                
-                docs_to_encode.append(combined_doc)
-                temp_functions.append(CodeFunction(
-                    name=func_name,
-                    code=func_dict.content,
-                    documentation=func_dict.docstring,
-                    file_path=file_path
-                ))
+            if code_tree.methods is not None:
+                for func, func_dict in code_tree.methods.items():
+                    # Prepare code for embedding
+                    processed_code = func_dict.content
+                    codes_to_encode.append(processed_code)
+                    func_name = func.split("~")[0]
+                    
+                    # Combine all documentation
+                    combined_doc = f"MethodName: {func_name} \n{func_dict.docstring}"
+                    
+                    docs_to_encode.append(combined_doc)
+                    temp_functions.append(CodeFunction(
+                        name=func_name,
+                        code=func_dict.content,
+                        documentation=func_dict.docstring,
+                        file_path=file_path
+                    ))
+            if code_tree.classes is not None:
+                for class_details, class_dict in code_tree.classes.items():
+                    for func, func_dict in class_dict.methods.items():
+                        # Prepare code for embedding
+                        processed_code = func_dict.content
+                        codes_to_encode.append(processed_code)
+                        func_name = func.split("~")[0]
+                        
+                        # Combine all documentation
+                        combined_doc = f"MethodName: {func_name} \n{func_dict.docstring}"
+                        
+                        docs_to_encode.append(combined_doc)
+                        temp_functions.append(CodeFunction(
+                            name=func_name,
+                            code=func_dict.content,
+                            documentation=func_dict.docstring,
+                            file_path=file_path
+                        ))
+            else:
+                print("No class found in file - ", file_path)
+            
                                     
         # Batch encode everything
         code_embeddings = self.encode_batch(codes_to_encode, self.code_encoder)
         doc_embeddings = self.encode_batch(docs_to_encode, self.doc_encoder)
+        print(2)
         
         # Assign embeddings to functions
         for func, code_emb, doc_emb in zip(temp_functions, code_embeddings, doc_embeddings):
