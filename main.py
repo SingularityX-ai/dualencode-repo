@@ -10,6 +10,7 @@ encoder = DualEncoder(
 repo = "/Users/sumansaurabh/Documents/singularityx/github/MoneyPrinterTurbo/app/"
 repo = "/Users/sumansaurabh/Documents/singularityx/github/snorkell-backend/backend/"
 repo = "/home/azureuser/localfiles/pokerogue"
+repo = "/home/azureuser/localfiles/snorkell-backend"
 
 encoder.index_repository(
     repo_path=repo,
@@ -19,7 +20,7 @@ encoder.index_repository(
 # Search with different focuses
 # 1. Search everything
 
-message = "Increment the turn in the battle scene"
+message = "add try catch block to the site uploader so that it can retry the upload if it fails"
 results = encoder.search(
     message,
     search_code=True,
@@ -40,6 +41,8 @@ doc_results = encoder.search(
     search_docs=True
 )
 
+print("####### OVerall Reusltes ##########")
+
 # Process results
 for result in results:
     print(f"Function: {result.function.name}")
@@ -49,7 +52,30 @@ for result in results:
     print(f"Doc Similarity: {result.doc_similarity:.2f}")
     print(f"Combined: {result.combined_similarity:.2f}")
     print("\n\n")
+
     
+print("####### DOC Reusltes ##########")
+
+for result in doc_results:
+    print(f"Function: {result.function.name}")
+    print(f"File Path: {result.function.file_path}")
+    print(f"Docstring: {result.function.documentation}")
+    print(f"Code Similarity: {result.code_similarity:.2f}")
+    print(f"Doc Similarity: {result.doc_similarity:.2f}")
+    print(f"Combined: {result.combined_similarity:.2f}")
+    print("\n\n")
+
+
+print("####### Code results##########")
+
+for result in code_results:
+    print(f"Function: {result.function.name}")
+    print(f"File Path: {result.function.file_path}")
+    print(f"Docstring: {result.function.documentation}")
+    print(f"Code Similarity: {result.code_similarity:.2f}")
+    print(f"Doc Similarity: {result.doc_similarity:.2f}")
+    print(f"Combined: {result.combined_similarity:.2f}")
+    print("\n\n")
     
 
 # # code results

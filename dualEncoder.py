@@ -192,7 +192,7 @@ class DualEncoder:
         query: str,
         search_code: bool = True,
         search_docs: bool = True,
-        top_k: int = 2,
+        top_k: int = 5,
         min_similarity: float = 0.3
     ) -> List[CodeAnalysisResult]:
         """
@@ -213,7 +213,7 @@ class DualEncoder:
         code_query = code_query / (np.linalg.norm(code_query) + 1e-8)
         doc_query = doc_query / (np.linalg.norm(doc_query) + 1e-8)
         
-        results = []
+        results: List[CodeAnalysisResult] = []
         
         for func in self.functions:
             code_sim = 0.0
