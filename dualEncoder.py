@@ -68,7 +68,23 @@ class DualEncoder:
         encoder: SentenceTransformer,
         batch_size: int = 8
     ) -> np.ndarray:
-        """Encode texts in batches."""
+        """Encode a list of texts in batches using a specified encoder.
+
+        This function takes a list of texts and encodes them in batches using
+        the provided SentenceTransformer encoder. It allows for efficient
+        processing of large datasets by splitting the input into smaller
+        batches, which can help manage memory usage and improve performance. The
+        encoded output is returned as a NumPy array.
+
+        Args:
+            texts (List[str]): A list of strings to be encoded.
+            encoder (SentenceTransformer): The encoder used to transform the texts.
+            batch_size (int?): The number of texts to process in each batch.
+                Defaults to 8.
+
+        Returns:
+            np.ndarray: A NumPy array containing the encoded representations of the input texts.
+        """
         return encoder.encode(
             texts,
             batch_size=batch_size,
@@ -78,7 +94,22 @@ class DualEncoder:
 
 
     def index_repository(self, repo_path: str, docs_path: str, force_update: bool = False):
-        """Index all Python files using both encoders."""
+        """Index all Python files using both encoders.
+
+        This function scans a specified repository for Python and other
+        specified file types, collects their content, and generates embeddings
+        for both the code and associated documentation. If an index already
+        exists and `force_update` is set to False, the function will load the
+        existing index instead of re-indexing the files. The function handles
+        various file types and ensures that only relevant files are processed.
+
+        Args:
+            repo_path (str): The path to the repository containing the files to be indexed.
+            docs_path (str): The path to the documentation files (not currently used in this
+                implementation).
+            force_update (bool?): A flag indicating whether to force re-indexing of files.
+                Defaults to False.
+        """
 
 
         # external_docs = self.load_documentation(docs_path)
@@ -195,15 +226,27 @@ class DualEncoder:
         top_k: int = 5,
         min_similarity: float = 0.3
     ) -> List[CodeAnalysisResult]:
-        """
-        Search for similar functions using both code and documentation embeddings.
-        
+        """Search for similar functions using both code and documentation
+        embeddings.
+
+        This function allows users to search for functions that are similar to a
+        given query based on both code and documentation embeddings. It encodes
+        the query using two separate encoders for code and documentation,
+        normalizes the resulting vectors, and computes similarity scores against
+        a list of functions. The results can be filtered based on minimum
+        similarity thresholds and can prioritize either code, documentation, or
+        both.
+
         Args:
-            query: Search query
-            search_code: Whether to search in code
-            search_docs: Whether to search in documentation
-            top_k: Number of results to return
-            min_similarity: Minimum similarity threshold
+            query (str): The search query to find similar functions.
+            search_code (bool?): Whether to include code in the search. Defaults to True.
+            search_docs (bool?): Whether to include documentation in the search. Defaults to True.
+            top_k (int?): The number of top results to return. Defaults to 5.
+            min_similarity (float?): The minimum similarity threshold for results. Defaults to 0.3.
+
+        Returns:
+            List[CodeAnalysisResult]: A list of CodeAnalysisResult objects containing the similarity scores
+            and the corresponding functions that meet the criteria.
         """
         # Encode query with both encoders and normalize
         code_query = self.code_encoder.encode(query, convert_to_numpy=True)
