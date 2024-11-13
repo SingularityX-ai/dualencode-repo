@@ -1,5 +1,6 @@
 import os
 from pprint import pprint
+import re
 from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 from dataclasses import dataclass
 import ast
@@ -7,6 +8,8 @@ from pathlib import Path
 import glob
 import json
 from enum import Enum
+from transformers import AutoTokenizer, AutoModel
+
 
 import numpy as np
 from apiCall import generate_code_tree
@@ -15,11 +18,51 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 
-class CodeAnalysisResult(NamedTuple):
+class EnhancedCodeAnalysisResult(NamedTuple):
     code_similarity: float
     doc_similarity: float
+    semantic_similarity: float
     combined_similarity: float
     function: 'CodeFunction'
+
+class SemanticAnalyzer:
+    def __init__(self, model_name: str = "sentence-transformers/all-mpnet-base-v2"):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        
+    def mean_pooling(self, model_output, attention_mask):
+        """Mean pooling to get sentence embeddings"""
+        token_embeddings = model_output[0]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
+    def get_semantic_embeddings(self, texts: List[str]) -> np.ndarray:
+        """Get semantic embeddings for a list of texts"""
+        # Tokenize and prepare input
+        encoded_input = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        ).to(self.device)
+        
+        # Compute token embeddings
+        with torch.no_grad():
+            model_output = self.model(**encoded_input)
+        
+        # Apply mean pooling
+        sentence_embeddings = self.mean_pooling(model_output, encoded_input['attention_mask'])
+        
+        # Normalize embeddings
+        sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
+        
+        return sentence_embeddings.cpu().numpy()
+
+    def calculate_semantic_similarity(self, query_embedding: np.ndarray, doc_embedding: np.ndarray) -> float:
+        """Calculate semantic similarity between query and document embeddings"""
+        return np.dot(query_embedding[0], doc_embedding[0])
 
 @dataclass
 class CodeFunction:
@@ -35,6 +78,7 @@ class DualEncoder:
         self,
         code_model: str = "microsoft/codebert-base",
         doc_model: str = "intfloat/e5-large-v2",
+        semantic_model: str = "sentence-transformers/all-mpnet-base-v2",
         device: str = None,
         code_weight: float = 0.5  # Weight for combining similarities
     ):
@@ -45,9 +89,42 @@ class DualEncoder:
             
         self.code_encoder = SentenceTransformer(code_model, device=device)
         self.doc_encoder = SentenceTransformer(doc_model, device=device)
+        self.semantic_analyzer = SemanticAnalyzer(semantic_model)
         self.code_weight = code_weight
         self.doc_weight = 1 - code_weight
         self.functions: List[CodeFunction] = []
+
+    def preprocess_docstring(self, docstring: str) -> str:
+        """Clean and normalize docstring for semantic analysis"""
+        if not docstring:
+            return ""
+            
+        # Remove common docstring markers
+        docstring = re.sub(r'Args:|Returns:|Raises:|Example[s]?:', ' ', docstring)
+        
+        # Clean up whitespace
+        docstring = re.sub(r'\s+', ' ', docstring).strip()
+        
+        # Remove code blocks
+        docstring = re.sub(r'```[\s\S]*?```', '', docstring)
+        
+        return docstring
+
+    def preprocess_docstring(self, docstring: str) -> str:
+        """Clean and normalize docstring for semantic analysis"""
+        if not docstring:
+            return ""
+            
+        # Remove common docstring markers
+        docstring = re.sub(r'Args:|Returns:|Raises:|Example[s]?:', ' ', docstring)
+        
+        # Clean up whitespace
+        docstring = re.sub(r'\s+', ' ', docstring).strip()
+        
+        # Remove code blocks
+        docstring = re.sub(r'```[\s\S]*?```', '', docstring)
+        
+        return docstring
         
 
     def load_documentation(self, docs_path: str) -> Dict[str, str]:
@@ -103,6 +180,7 @@ class DualEncoder:
         # Collect all texts to encode
         codes_to_encode = []
         docs_to_encode = []
+        semantic_docs = []
         temp_functions: List[CodeFunction] = []
         
         count = 0
@@ -140,7 +218,9 @@ class DualEncoder:
                     # Prepare code for embedding
                     processed_code = func_dict.content
                     codes_to_encode.append(processed_code)
-                    func_name = func.split("~")[0]
+                    func_name = func
+                    clean_docstring = self.preprocess_docstring(func_dict.docstring)
+                    semantic_docs.append(clean_docstring)
                     
                     # Combine all documentation
                     combined_doc = f"MethodName: {func_name} \n{func_dict.docstring}"
@@ -175,8 +255,10 @@ class DualEncoder:
             
                                     
         # Batch encode everything
+        semantic_embeddings = self.semantic_analyzer.get_semantic_embeddings(semantic_docs)
         code_embeddings = self.encode_batch(codes_to_encode, self.code_encoder)
         doc_embeddings = self.encode_batch(docs_to_encode, self.doc_encoder)
+        
         print(2)
         
         # Assign embeddings to functions
@@ -194,59 +276,55 @@ class DualEncoder:
         search_docs: bool = True,
         top_k: int = 5,
         min_similarity: float = 0.3
-    ) -> List[CodeAnalysisResult]:
+    ) -> List[EnhancedCodeAnalysisResult]:
         """
-        Search for similar functions using both code and documentation embeddings.
-        
-        Args:
-            query: Search query
-            search_code: Whether to search in code
-            search_docs: Whether to search in documentation
-            top_k: Number of results to return
-            min_similarity: Minimum similarity threshold
+        Enhanced search using semantic similarity of docstrings.
         """
-        # Encode query with both encoders and normalize
+        # Encode query
         code_query = self.code_encoder.encode(query, convert_to_numpy=True)
         doc_query = self.doc_encoder.encode(query, convert_to_numpy=True)
+        semantic_query = self.semantic_analyzer.get_semantic_embeddings([self.preprocess_docstring(query)])
         
         # Normalize query vectors
         code_query = code_query / (np.linalg.norm(code_query) + 1e-8)
         doc_query = doc_query / (np.linalg.norm(doc_query) + 1e-8)
         
-        results: List[CodeAnalysisResult] = []
+        results = []
         
         for func in self.functions:
+            # Calculate embedding similarities
             code_sim = 0.0
-            doc_sim = 0.0
-            
             if search_code and func.code_embedding is not None:
-                # Normalize code embedding
                 code_embedding = func.code_embedding / (np.linalg.norm(func.code_embedding) + 1e-8)
                 code_sim = np.dot(code_query, code_embedding)
-                    
+            
+            doc_sim = 0.0
             if search_docs and func.doc_embedding is not None:
-                # Normalize doc embedding
                 doc_embedding = func.doc_embedding / (np.linalg.norm(func.doc_embedding) + 1e-8)
                 doc_sim = np.dot(doc_query, doc_embedding)
             
-            # Calculate combined similarity
-            if search_code and search_docs:
-                combined_sim = (code_sim * self.code_weight + 
-                            doc_sim * self.doc_weight)
-            elif search_code:
-                combined_sim = code_sim
-            else:
-                combined_sim = doc_sim
+            # Calculate semantic similarity
+            semantic_sim = self.semantic_analyzer.calculate_semantic_similarity(
+                semantic_query,
+                func.semantic_embedding.reshape(1, -1)
+            )
+            
+            # Calculate weighted combination
+            combined_sim = (
+                code_sim * self.weights['code_embedding'] +
+                doc_sim * self.weights['doc_embedding'] +
+                semantic_sim * self.weights['semantic']
+            )
             
             if combined_sim >= min_similarity:
-                results.append(CodeAnalysisResult(
+                results.append(EnhancedCodeAnalysisResult(
                     code_similarity=code_sim,
                     doc_similarity=doc_sim,
+                    semantic_similarity=semantic_sim,
                     combined_similarity=combined_sim,
                     function=func
                 ))
         
-        # Sort by combined similarity
         results.sort(key=lambda x: x.combined_similarity, reverse=True)
         return results[:top_k]
 
