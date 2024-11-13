@@ -68,7 +68,24 @@ class DualEncoder:
         encoder: SentenceTransformer,
         batch_size: int = 8
     ) -> np.ndarray:
-        """Encode texts in batches."""
+        """Encode a list of texts in batches using a specified encoder.
+
+        This function takes a list of text strings and encodes them using the
+        provided SentenceTransformer encoder. It processes the texts in batches
+        to optimize performance and memory usage. The encoding is done with a
+        progress bar displayed to the user, and the output is converted to a
+        NumPy array for easier manipulation and integration with other numerical
+        libraries.
+
+        Args:
+            texts (List[str]): A list of text strings to be encoded.
+            encoder (SentenceTransformer): The encoder used to transform the texts.
+            batch_size (int?): The number of texts to process in each batch.
+                Defaults to 8.
+
+        Returns:
+            np.ndarray: A NumPy array containing the encoded representations of the input texts.
+        """
         return encoder.encode(
             texts,
             batch_size=batch_size,
@@ -78,7 +95,22 @@ class DualEncoder:
 
 
     def index_repository(self, repo_path: str, docs_path: str, force_update: bool = False):
-        """Index all Python files using both encoders."""
+        """Index all Python files using both encoders.
+
+        This function scans the specified repository path for Python and other
+        specified file types, collects their code and documentation, and
+        generates embeddings for both. It checks if an index already exists and
+        can skip the indexing process if not forced to update. The function
+        processes each file, extracts methods and classes, and prepares them for
+        encoding. Finally, it saves the generated index to a JSON file.
+
+        Args:
+            repo_path (str): The path to the repository containing the code files.
+            docs_path (str): The path to the documentation files (not currently used in this
+                implementation).
+            force_update (bool?): A flag indicating whether to force an update of the index.
+                Defaults to False.
+        """
 
 
         # external_docs = self.load_documentation(docs_path)
